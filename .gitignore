@@ -1,0 +1,55 @@
+# === Secrets & clés ===
+*.key
+*.pem
+*.pfx
+*.p12
+*.ovpn
+id_rsa*
+*secret*
+*.secrets
+
+# === Artefacts d'attaque / loot (ne JAMAIS committer) ===
+loot/
+dumps/
+*.dmp
+*.kirbi
+*.ccache
+*.ntds
+ntds.dit
+SYSTEM
+SAM
+SECURITY
+*hashes*
+*.hash
+*_BloodHound.zip
+*bloodhound*.json
+*.pcap
+*.cap
+
+# === Configs avec secrets (ne committer que des versions assainies) ===
+config/velociraptor/*server*.yaml
+config/velociraptor/*.config.yaml
+**/*.local.yaml
+
+# === Images de VM ===
+*.ova
+*.vmdk
+*.vdi
+*.vmx*
+*.nvram
+*.vmsd
+*.vmsn
+*.vmem
+
+# === OS / éditeurs ===
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# === Python (scripts d'analyse) ===
+__pycache__/
+*.pyc
+.venv/
+venv/
