@@ -3,14 +3,14 @@
 > **Doc de passation unique** entre les conversations Claude (Projet claude.ai) et **Claude Code**.
 > Source de vérité de l'état du lab. À relire en début de session, à mettre à jour en fin de session (procédure en §9).
 
-**Dernière mise à jour :** 2026-11-02 — **S08 (doc des faiblesses du DC + durcissement) — documentation uniquement**
+**Dernière mise à jour :** 2026-11-02 — **S09 (GPO d'audit avancé + PowerShell logging) — ✅ validée sur DC01**
 
 ---
 
 ## 0. TL;DR (à lire en premier)
 
 - **Quoi :** lab Active Directory vulnérable, orienté Purple Team (attaque → détection → chasse → remédiation → rejeu), pour GitHub + CV.
-- **Où on en est :** DC `DC01` promu, forêt **`purplelab.local`** opérationnelle (AD DS + DNS, zone inverse, PTR, NTP, SYSVOL/NETLOGON partagés). Administré en **SSH depuis l'hôte** (`ssh "PURPLELAB\Administrateur"@10.10.10.10`). Section « DC01 » rédigée pour `docs/01-deploiement-infra.md` (à committer par Amine).
+- **Où on en est :** DC `DC01` promu, forêt **`purplelab.local`** opérationnelle (AD DS + DNS, zone inverse, PTR, NTP, SYSVOL/NETLOGON partagés). Administré en **SSH depuis l'hôte** (`ssh "PURPLELAB\Administrateur"@10.10.10.10`). Section « DC01 » rédigée pour `docs/01-deploiement-infra.md` (à committer par Amine). **GPO `PURPLELAB - Audit avance` en place** (S09 : audit avancé Kerberos/logon/comptes/4688 + cmdline + PowerShell 4103/4104), validée sur DC01.
 - **Prochaine action :** 🖥️ Hôte snapshot `DC-ADDS-clean` → S07 (clients Windows 11 + jonction au domaine) → section « Clients » dans `docs/01-deploiement-infra.md`.
 - **Règle d'or :** l'AD reste *propre* tant que la télémétrie (audit, Sysmon, Wazuh) n'est pas en place et vérifiée. Les vulnérabilités se posent **après**.
 
@@ -55,7 +55,8 @@
   │   ├── 03-scenarios/               # 01-password-spraying … 05-path-to-da (gabarit 5 étapes, statut ⬜)
   │   └── images/                     # captures + architecture.png (à produire)
   ├── config/
-  │   ├── gpo/audit-policy.md         # sous-catégories d'audit à activer
+  │   ├── ad/setup-vulns.ps1          # pose des 5 faiblesses (phase 3 uniquement)
+  │   ├── gpo/audit-policy.md         # sous-catégories d'audit activées + setup-audit-gpo.ps1 (S09)
   │   ├── sysmon/  velociraptor/  wazuh/decoders/   # vides (.gitkeep) — versions ASSAINIES uniquement
   ├── detection/
   │   ├── sigma/  wazuh-rules/        # vides
@@ -71,6 +72,7 @@
 - **Boot sur ISO (UEFI) :** le « Press any key » dure ~5 s et n'est pris que si la VM a le clavier. Méthode fiable : **VM → Power → Power On to Firmware → Boot Manager → CDROM**, puis Entrée.
 - **Ne jamais changer l'IP / le réseau d'une VM depuis une session SSH** : la session coupe et la VM peut devenir injoignable (cas vécu : IP 10.10.10.10 posée sur une carte encore en NAT/VMnet8). Faire ces changements depuis la console VMware.
 - **`Install-ADDSForest` redémarre tout seul** : attendre le reboot (3-5 min) avant zone inverse/PTR, sinon erreur DNS 9901 (zone AD-intégrée impossible avant que l'AD soit actif). Vérifier `Get-Service NTDS, DNS, ADWS` = Running avant de continuer.
+- **scp/ssh depuis PowerShell :** guillemets autour de toute la cible (`"PURPLELAB\Administrateur@10.10.10.10:C:/..."`), sinon `@` est interprété par PowerShell.
 - Sans passerelle, le profil réseau peut rester « Public » après reboot → `Restart-Service NlaSvc -Force`.
 
 ---
@@ -132,7 +134,8 @@ Toutes dans `C:\LAB-AD\<nom>\`, carte réseau **Custom : VMnet2 (Host-only)**, I
 | | S06 | Install Server 2022 + promotion DC : AD DS + DNS `purplelab.local` | ✅ (reste snapshot) |
 | | **S07** | **Install Windows 11 sur CLIENT01/02 + jonction au domaine** | ⏳ prochaine |
 | | S08 | Install Kali + SIEM (Ubuntu), IP statiques | ⏳ |
-| 2 — Télémétrie | S09+ | Wazuh + Velociraptor sur SIEM ; audit avancé (cf. `config/gpo/audit-policy.md`) ; PowerShell Script Block + Module Logging ; Sysmon SwiftOnSecurity ; **vérifier l'ingestion** | ⏳ |
+| 2 — Télémétrie | S09 | GPO audit avancé + PowerShell logging (`config/gpo/setup-audit-gpo.ps1`) | ✅ DC01 (clients à la jonction) |
+| | S10+ | Wazuh + Velociraptor sur SIEM ; Sysmon SwiftOnSecurity sur les clients ; **vérifier l'ingestion** (dont 4771/4625/4776 depuis Kali) | ⏳ |
 | 3 — Vulnérabilisation | — | Comptes faibles, SPN, compte sans pré-auth, délégation mal réglée → `clean-baseline-<date>` | ⏳ |
 | 4 — Scénarios | — | 5 boucles complètes (§5) | ⏳ |
 | 5 — Livrable | — | README final | ⏳ |
@@ -172,6 +175,14 @@ Numéros S07+ indicatifs, à ajuster.
 ---
 
 ## 7. Journal des sessions (le plus récent en haut)
+
+### S09 — 2026-11-02 — GPO d'audit avancé (✅ validée sur DC01)
+- **Fait :**
+  - Script `config/gpo/setup-audit-gpo.ps1` (idempotent) : GPO `PURPLELAB - Audit avance` {E1A71355-B60E-447D-A3EB-7A9D71590B57}, liée racine domaine + OU Domain Controllers (ordre 1). Audit avancé via `audit.csv` (11 sous-catégories, GUID → indépendant de la langue), `SCENoApplyLegacyAuditPolicy`, cmdline 4688, Script Block + Module Logging, journal Security 512 Mo. `config/gpo/audit-policy.md` + `docs/02-telemetrie.md` mis à jour.
+  - 🖥️ Hôte Windows — `scp` du script vers le DC ; 🖥️ PurpleAD-DC — exécution → version GPO 7.
+  - **Vérifs OK (DC01) :** auditpol = 11 sous-catégories conformes ; 4768/4769 (klist), 4688 avec cmdline, 4624, 4104.
+- **Reste :** 4771/4625/4776 à valider depuis Kali ; GPO à constater sur CLIENT01/02 après jonction (`gpresult /r`) ; SACL pour 5136 en phase 3.
+- **Pièges :** sous PowerShell, `scp "PURPLELAB\Administrateur"@IP:...` casse sur `@` → mettre **toute la cible entre guillemets** : `"PURPLELAB\Administrateur@10.10.10.10:C:/..."`.
 
 ### S08 — 2026-11-02 — Documentation des faiblesses introduites sur le DC (doc only)
 - **Nature :** documentation **uniquement** — aucune faiblesse posée (phase 3 non entamée). Les faiblesses se créeront après la télémétrie vérifiée (phase 2).
