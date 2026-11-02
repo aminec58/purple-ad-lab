@@ -40,11 +40,11 @@ Un scénario n'est « fini » que si **la détection se déclenche au rejeu** ET
 
 | # | Scénario                              | MITRE ATT&CK | Outil(s)                      | Détection Wazuh | Requête Velociraptor | Règle ajoutée | Remédiation |
 |---|---------------------------------------|--------------|-------------------------------|-----------------|----------------------|---------------|-------------|
-| 1 | [Password spraying](docs/03-scenarios/01-password-spraying.md) | T1110.003 | CrackMapExec / nxc            | _à compléter_ | _à compléter_ | _à compléter_ | _à compléter_ |
-| 2 | [AS-REP roasting](docs/03-scenarios/02-asrep-roasting.md)       | T1558.004 | Impacket GetNPUsers / Rubeus  | _à compléter_ | _à compléter_ | _à compléter_ | _à compléter_ |
-| 3 | [Kerberoasting](docs/03-scenarios/03-kerberoasting.md)          | T1558.003 | Rubeus / GetUserSPNs          | _à compléter_ | _à compléter_ | _à compléter_ | _à compléter_ |
-| 4 | [Pass-the-Hash + latéral](docs/03-scenarios/04-pass-the-hash.md)| T1550.002 | Mimikatz + CrackMapExec       | _à compléter_ | _à compléter_ | _à compléter_ | _à compléter_ |
-| 5 | [Chemin → Domain Admin](docs/03-scenarios/05-path-to-da.md)     | T1087     | BloodHound / SharpHound       | _à compléter_ | _à compléter_ | _à compléter_ | _à compléter_ |
+| 1 | [Password spraying](docs/03-scenarios/01-password-spraying.md) | T1110.003 | CrackMapExec / nxc            | _à compléter_ | _à compléter_ | _à compléter_ | Politique MDP + verrouillage |
+| 2 | [AS-REP roasting](docs/03-scenarios/02-asrep-roasting.md)       | T1558.004 | Impacket GetNPUsers / Rubeus  | _à compléter_ | _à compléter_ | _à compléter_ | Réactiver pré-auth, AES only |
+| 3 | [Kerberoasting](docs/03-scenarios/03-kerberoasting.md)          | T1558.003 | Rubeus / GetUserSPNs          | _à compléter_ | _à compléter_ | _à compléter_ | gMSA, AES only, retrait SPN |
+| 4 | [Pass-the-Hash + latéral](docs/03-scenarios/04-pass-the-hash.md)| T1550.002 | Mimikatz + CrackMapExec       | _à compléter_ | _à compléter_ | _à compléter_ | Supprimer unconstrained, comptes non délégables |
+| 5 | [Chemin → Domain Admin](docs/03-scenarios/05-path-to-da.md)     | T1087     | BloodHound / SharpHound       | _à compléter_ | _à compléter_ | _à compléter_ | Nettoyage ACL, tiering, moindre privilège |
 
 ## Structure du dépôt
 
