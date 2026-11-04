@@ -30,10 +30,31 @@ C:\Users\Administrateur\setup-audit-gpo.ps1
 - Module Logging, tous modules `*` (**4103**)
 (sur DC et postes, via la GPO ci-dessus)
 
-## 3. Sysmon
-- Config SwiftOnSecurity
-- Process, connexions réseau, accès LSASS
-- Déployé sur CLIENT01 et CLIENT02
+## 3. Sysmon — ✅ S11 (CLIENT01, CLIENT02)
+
+| Élément | Valeur |
+|---|---|
+| Binaire | `Sysmon64.exe` 15.22 (Sysinternals), signature Authenticode vérifiée |
+| Config | SwiftOnSecurity `sysmonconfig-export.xml`, **non modifiée** — copie figée : [`config/sysmon/`](../config/sysmon/) |
+| Emplacement | `C:\Sysmon\` sur chaque poste |
+| Journal | `Microsoft-Windows-Sysmon/Operational`, 256 Mo |
+
+**Déploiement (🖥️ Hôte Windows — clients sans Internet, binaire + config téléchargés sur l'hôte) :**
+```powershell
+foreach ($ip in '10.10.10.21','10.10.10.22') {
+  ssh amin@$ip "powershell -NoProfile -Command New-Item -ItemType Directory -Force C:\Sysmon"
+  scp .\Sysmon64.exe .\sysmonconfig-export.xml "amin@${ip}:C:/Sysmon/"
+  ssh amin@$ip "C:\Sysmon\Sysmon64.exe -accepteula -i C:\Sysmon\sysmonconfig-export.xml"
+  ssh amin@$ip "wevtutil sl Microsoft-Windows-Sysmon/Operational /ms:268435456"
+}
+```
+
+**Validation (2026-11-04, les 2 postes) :** services `Sysmon64` + `SysmonDrv` Running ✅ ; IDs 1, 3, 11, 12, 13, 22 observés ✅ ; taille du journal = 268435456 ✅
+
+**Limite connue :** pas d'ID 10 (ProcessAccess) — bloc vide dans la config SwiftOnSecurity → accès à **LSASS non journalisés**.
+Angle mort assumé : traité comme écart de détection dans le scénario 4 (Pass-the-Hash), remédié par une config `sysmonconfig-purplelab.xml`.
+
+**Bruit connu :** ID 8 (CreateRemoteThread) avec `StartFunction: CtrlRoutine` (csrss → console) = gestion de Ctrl+C, bénin.
 
 ## 4. Validation (BLOQUANT)
 Vérifier dans Wazuh que **les trois sources remontent** (audit Windows, PowerShell, Sysmon)
