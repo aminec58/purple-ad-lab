@@ -301,8 +301,10 @@ Numéros de session indicatifs (les S09/S10/S11 de télémétrie ont été faits
 - [x] Vérif SYSVOL/NETLOGON
 - [ ] Snapshot `DC-ADDS-clean`
 - [ ] Confirmer l'édition de Server installée sur le DC (Core / Expérience de bureau)
-- [ ] Committer la section DC01 dans `docs/01-deploiement-infra.md` + ajouter une section « Clients » (CLIENT01/02) (+ captures dans `docs/images/`)
-- [ ] README : remplacer « Windows 10/11 » par « Windows 11 Pro » ; schéma `docs/images/architecture.png` à produire
+- [x] Sections DC01 + « Clients » (CLIENT01/02) dans `docs/01-deploiement-infra.md` — S11
+- [ ] Captures d'écran dans `docs/images/`
+- [x] README + `00-architecture.md` : « Windows 10/11 » → « Windows 11 Pro » — S11
+- [ ] Schéma `docs/images/architecture.png` à produire
 - [x] Copier ce fichier dans le dépôt (`docs/CONTEXTE.md`) — recopié en S11
 - [x] Constater 4103/4104 (PowerShell) + audit avancé sur CLIENT01/02 après jonction (`gpresult /r`) — S07
 - [x] Sysmon SwiftOnSecurity sur CLIENT01/02 — S11

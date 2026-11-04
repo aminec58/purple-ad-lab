@@ -124,6 +124,69 @@ ssh "PURPLELAB\Administrateur"@10.10.10.10
 
 Cet accès est propre au lab. Il génère ses propres événements de connexion, à distinguer de l'activité d'attaque lors des scénarios.
 
+## Réalisation — CLIENT01 et CLIENT02
+
+Les deux postes sont déployés à l'identique : seuls le nom et l'adresse IP changent.
+
+### Spécifications
+
+| Élément | CLIENT01 | CLIENT02 |
+|---|---|---|
+| VM (VMware) | `PurpleAD-CLIENT01` | `PurpleAD-CLIENT02` |
+| OS | Windows 11 **Pro** (build 26300) | idem |
+| Ressources | 4 Go RAM, 2 vCPU, 64 Go NVMe, vTPM | idem |
+| Adresse IP | 10.10.10.21/24 | 10.10.10.22/24 |
+| DNS | 10.10.10.10 (DC01) | idem |
+| Compte local | `amin` (administrateur local) | idem |
+
+### 1. Installation de Windows 11
+
+- Édition **Pro** obligatoire : l'édition Famille ne peut pas joindre un domaine.
+- OOBE sans Internet (réseau host-only) : à l'écran réseau, `Maj+F10` puis `start ms-cxh:localonly` pour créer directement un compte local.
+- VMware Tools installés.
+
+### 2. Accès d'administration (OpenSSH)
+
+L'installation d'OpenSSH Server télécharge depuis Windows Update : la carte réseau passe temporairement en **NAT**, puis revient sur **VMnet2**. Le changement se fait depuis la console VMware, jamais en SSH.
+
+```powershell
+# PowerShell administrateur
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Set-Service sshd -StartupType Automatic; Start-Service sshd
+# Réseau non identifié = profil Public → la règle OpenSSH par défaut (Domaine/Privé) ne s'applique pas
+New-NetFirewallRule -Name sshd-any -DisplayName "sshd Any" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any
+```
+
+### 3. Réseau, nom et jonction au domaine
+
+```powershell
+$if = (Get-NetAdapter | Where-Object Status -eq Up).Name
+New-NetIPAddress -InterfaceAlias $if -IPAddress 10.10.10.21 -PrefixLength 24      # .22 pour CLIENT02
+Set-DnsClientServerAddress -InterfaceAlias $if -ServerAddresses 10.10.10.10
+Rename-Computer -NewName CLIENT01 -Restart                                          # CLIENT02
+# Après redémarrage :
+Add-Computer -DomainName purplelab.local -Credential PURPLELAB\Administrateur -Restart
+```
+
+### 4. Vérifications
+
+| Test | Commande | Résultat obtenu |
+|---|---|---|
+| Appartenance au domaine | `(Get-ComputerInfo).CsDomain` | `purplelab.local` (les 2 postes) |
+| GPO appliquées | `gpresult /r` | `Default Domain Policy` + `PURPLELAB - Audit avance` |
+| Audit création de processus | `auditpol /get /subcategory:"Création du processus"` | Réussite (4688) |
+| PowerShell Script Block Logging | `EnableScriptBlockLogging` (registre) | `1` |
+
+### 5. Problèmes rencontrés
+
+| Problème | Cause | Solution |
+|---|---|---|
+| Boucle « l'ordinateur a redémarré de manière inattendue » | Bug du setup Windows 11 | `Maj+F10` → `regedit` → `HKLM\SYSTEM\Setup\Status\ChildCompletion\setup.exe` passé de 1 à 3, puis redémarrer sans booter sur l'ISO |
+| SSH en timeout vers le poste | Profil réseau **Public** : la règle OpenSSH par défaut ne couvre que Domaine/Privé | Règle `sshd-any` en `-Profile Any` |
+| `Add-WindowsCapability` exige une élévation | Console non administrateur | Relancer PowerShell en administrateur |
+| Jonction impossible, DNS en timeout | VM du DC éteinte | Démarrer `PurpleAD-DC` avant toute jonction |
+| Commandes collées en SSH tronquées | Caractères perdus au collage | Retaper la commande |
+
 ### Étape suivante
 
-Jonction de `CLIENT01` et `CLIENT02` (Windows 11) au domaine.
+Installation de `KALI` (10.10.10.50) et du `SIEM` (10.10.10.100).

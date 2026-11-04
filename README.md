@@ -11,8 +11,8 @@ Réseau VMware **host-only** isolé — `10.10.10.0/24`, domaine `purplelab.loca
 | VM        | Rôle                                   | OS                     | IP            |
 |-----------|----------------------------------------|------------------------|---------------|
 | DC        | AD DS + DNS (volontairement vulnérable)| Windows Server 2022    | 10.10.10.10   |
-| CLIENT01  | Poste joint au domaine                 | Windows 10/11          | 10.10.10.21   |
-| CLIENT02  | Poste joint au domaine                 | Windows 10/11          | 10.10.10.22   |
+| CLIENT01  | Poste joint au domaine                 | Windows 11 Pro         | 10.10.10.21   |
+| CLIENT02  | Poste joint au domaine                 | Windows 11 Pro         | 10.10.10.22   |
 | KALI      | Machine d'attaque                      | Kali Linux             | 10.10.10.50   |
 | SIEM      | Wazuh (SIEM) + Velociraptor (hunting)  | Ubuntu Server          | 10.10.10.100  |
 
@@ -21,7 +21,7 @@ Schéma détaillé : `docs/images/architecture.png` — plan complet dans [`docs
 ## Prérequis
 
 - VMware Workstation Pro
-- ISO : Windows Server 2022 (éval), Windows 10/11, Kali, Ubuntu Server
+- ISO : Windows Server 2022 (éval), Windows 11 (édition **Pro**, requise pour la jonction au domaine), Kali, Ubuntu Server
 - **Snapshot « clean baseline »** de chaque VM avant toute attaque
 - Détails d'installation et dimensionnement RAM/CPU : [`docs/01-deploiement-infra.md`](docs/01-deploiement-infra.md)
 

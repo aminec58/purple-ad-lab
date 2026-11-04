@@ -11,8 +11,8 @@
 | VM       | Rôle                                    | OS                  | IP           |
 |----------|-----------------------------------------|---------------------|--------------|
 | DC       | AD DS + DNS (vulnérable)                | Windows Server 2022 | 10.10.10.10  |
-| CLIENT01 | Poste joint                             | Windows 10/11       | 10.10.10.21  |
-| CLIENT02 | Poste joint                             | Windows 10/11       | 10.10.10.22  |
+| CLIENT01 | Poste joint                             | Windows 11 Pro      | 10.10.10.21  |
+| CLIENT02 | Poste joint                             | Windows 11 Pro      | 10.10.10.22  |
 | KALI     | Attaque                                 | Kali Linux          | 10.10.10.50  |
 | SIEM     | Wazuh + Velociraptor                    | Ubuntu Server       | 10.10.10.100 |
 
