@@ -6,6 +6,8 @@ Lab de cybersécurité **Active Directory** orienté **Purple Team** : pour chaq
 
 ## Architecture
 
+![Architecture du lab](docs/images/architecture.png)
+
 Réseau VMware **host-only** isolé — `10.10.10.0/24`, domaine `purplelab.local`.
 
 | VM        | Rôle                                   | OS                     | IP            |
