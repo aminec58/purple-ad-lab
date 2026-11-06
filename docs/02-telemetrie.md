@@ -56,6 +56,39 @@ Angle mort assumé : traité comme écart de détection dans le scénario 4 (Pas
 
 **Bruit connu :** ID 8 (CreateRemoteThread) avec `StartFunction: CtrlRoutine` (csrss → console) = gestion de Ctrl+C, bénin.
 
-## 4. Validation (BLOQUANT)
+## 4. Agents : collecte (Wazuh) & endpoint (Velociraptor) — ✅ S14 (DC01, CLIENT01, CLIENT02)
+Les sources ci-dessus sont acheminées vers le SIEM par l'**agent Wazuh** (collecte des journaux d'événements → manager, pour corrélation et alerting). Le **client Velociraptor** ajoute un endpoint de *threat hunting* / DFIR interrogeable à la demande depuis le serveur. Serveur : 🖥️ PurpleAD-SIEM (10.10.10.100).
+
+### Agent Wazuh (v4.14.9)
+Version alignée sur celle du manager (`/var/ossec/bin/wazuh-control info`). Installation silencieuse par MSI, avec enrôlement automatique auprès du service `authd` (port 1515) ; communication agent↔manager sur le port 1514.
+
+**Déploiement (🖥️ PurpleAD-DC / CLIENT01 / CLIENT02, SSH — `WAZUH_AGENT_NAME` = hostname du poste) :**
+```cmd
+msiexec /i wazuh-agent-4.14.9-1.msi /qn WAZUH_MANAGER=10.10.10.100 WAZUH_REGISTRATION_SERVER=10.10.10.100 WAZUH_AGENT_NAME=DC01
+net start WazuhSvc
+```
+> `WAZUH_AGENT_NAME` doit être **unique** par poste : un doublon est rejeté par le manager (`Duplicate agent name`), l'agent ne s'enrôle pas. Correctif à chaud : `agent-auth.exe -m 10.10.10.100 -A <nom>` puis `Restart-Service WazuhSvc`.
+
+| Poste | ID agent | Statut |
+|---|---|---|
+| DC01 | 001 | Active |
+| CLIENT01 | 002 | Active |
+| CLIENT02 | 003 | Active |
+
+### Client Velociraptor (v0.77.3)
+Le binaire Windows est distribué compressé (`velociraptor-v0.77.3-windows-amd64.exe.gz`) : décompression côté hôte, puis déploiement avec le `client.config.yaml` généré par le serveur (`server_urls` → `https://10.10.10.100:8000`).
+
+**Installation en service (🖥️ chaque poste, binaire + config dans `C:\Velociraptor\`) :**
+```
+velociraptor.exe --config C:\Velociraptor\client.config.yaml service install
+```
+
+**Validation S14 (2026-11-06) :**
+- **Wazuh** : `sudo /var/ossec/bin/agent_control -l` → DC01, CLIENT01, CLIENT02 `Active` ✅
+- **Velociraptor** : console `https://10.10.10.100:8889` → *Search* → les 3 clients en ligne ✅
+
+## 5. Validation de l'ingestion (BLOQUANT)
 Vérifier dans Wazuh que **les trois sources remontent** (audit Windows, PowerShell, Sysmon)
-avant de lancer le moindre scénario d'attaque.
+avant de lancer le moindre scénario d'attaque. En complément : générer quelques événements depuis Kali
+(mauvais mot de passe → **4625 / 4771 / 4776**) et exécuter **une requête Velociraptor à blanc**
+(ex. liste des processus d'un client) pour valider la chaîne de chasse.
