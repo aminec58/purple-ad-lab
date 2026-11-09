@@ -87,8 +87,45 @@ velociraptor.exe --config C:\Velociraptor\client.config.yaml service install
 - **Wazuh** : `sudo /var/ossec/bin/agent_control -l` → DC01, CLIENT01, CLIENT02 `Active` ✅
 - **Velociraptor** : console `https://10.10.10.100:8889` → *Search* → les 3 clients en ligne ✅
 
-## 5. Validation de l'ingestion (BLOQUANT)
-Vérifier dans Wazuh que **les trois sources remontent** (audit Windows, PowerShell, Sysmon)
-avant de lancer le moindre scénario d'attaque. En complément : générer quelques événements depuis Kali
-(mauvais mot de passe → **4625 / 4771 / 4776**) et exécuter **une requête Velociraptor à blanc**
-(ex. liste des processus d'un client) pour valider la chaîne de chasse.
+## 5. Validation de l'ingestion — ✅ S15 (périmètre Windows)
+
+Étape **bloquante** : avant de rendre l'AD vulnérable, on vérifie que la télémétrie remonte réellement dans Wazuh et que Velociraptor peut chasser sur les postes.
+
+**Méthode :** archivage complet temporaire sur le manager (`<logall>` / `<logall_json>` = `yes`) pour capter aussi les events sans règle associée, génération d'événements témoins depuis CLIENT01, puis comptage dans `/var/ossec/logs/archives/archives.json` par Event ID et par agent.
+
+> **Correctif appliqué :** l'agent Wazuh ne collectait au départ que `Application` / `Security` / `System`. Ajout des canaux `Microsoft-Windows-Sysmon/Operational` et `Microsoft-Windows-PowerShell/Operational` dans l'`ossec.conf` des clients, sinon les 4104 et les events Sysmon ne remontent pas.
+
+### Résultat Wazuh
+
+| Source | Event ID | Agent | Archives |
+|---|---|---|---|
+| Kerberos — demande de TGT | 4768 | DC01 (001) | ✅ |
+| Kerberos — ticket de service | 4769 | DC01 (001) | ✅ |
+| Création de processus (cmdline) | 4688 | CLIENT01 (002) | ✅ |
+| PowerShell Script Block | 4104 | CLIENT01 (002) | ✅ |
+| Sysmon — création de processus | 1 | CLIENT01 (002) | ✅ |
+| Sysmon — connexion réseau | 3 | CLIENT01 (002) | ✅ |
+
+Pour générer 4768/4769 depuis un poste en session SSH : `net use \\dc01.purplelab.local\SYSVOL /user:PURPLELAB\Administrateur *` (authentifie dans la session courante ; `runas /netonly` ouvre une fenêtre invisible en SSH).
+
+### Validation Velociraptor
+
+Les trois endpoints sont en ligne (DC01, CLIENT01, CLIENT02).
+
+![Clients Velociraptor en ligne](images/s15-ingestion/s15-ingestion-01-velociraptor-clients-en-ligne.png)
+
+**Preuve de vie — `Windows.System.Pslist` sur CLIENT01** : la collecte se termine et renvoie la liste des processus.
+
+![Sélection Pslist](images/s15-ingestion/s15-ingestion-02-pslist-selection-artefact.png)
+![Collecte terminée](images/s15-ingestion/s15-ingestion-03-pslist-collecte-terminee.png)
+![Résultats Pslist](images/s15-ingestion/s15-ingestion-04-pslist-resultats.png)
+
+**Chasse sur une trace semée — `Windows.EventLogs.EvtxHunter`**, `IocRegex = S15-test-scriptblock` (chaîne émise par le bloc PowerShell témoin) : l'event **4104** (`PowerShell/Operational`, CLIENT01) est retrouvé → boucle collecte → chasse validée de bout en bout.
+
+![Sélection EvtxHunter](images/s15-ingestion/s15-ingestion-05-evtxhunter-selection.png)
+![Paramètre IocRegex](images/s15-ingestion/s15-ingestion-06-evtxhunter-iocregex.png)
+![Résultats EvtxHunter](images/s15-ingestion/s15-ingestion-07-evtxhunter-resultats.png)
+
+### Reste
+- Events d'attaque **4625 / 4771 / 4776** depuis Kali — à valider une fois Kali installé (réactiver `logall` le temps du test).
+- Canaux Sysmon / PowerShell à ajouter aussi sur CLIENT02.
