@@ -64,7 +64,7 @@ purple-ad-lab/
 
 - [ ] Infra déployée + snapshots baseline
 - [ ] DC vulnérabilisé + documenté
-- [ ] Télémétrie activée et ingestion Wazuh validée
-- [ ] Wazuh + Velociraptor opérationnels
+- [x] Télémétrie activée et ingestion Wazuh validée
+- [x] Wazuh + Velociraptor opérationnels
 - [ ] Scénarios 1 → 5 bouclés (détection + remédiation validées au rejeu)
 - [ ] README final complété

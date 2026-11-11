@@ -187,6 +187,63 @@ Add-Computer -DomainName purplelab.local -Credential PURPLELAB\Administrateur -R
 | Jonction impossible, DNS en timeout | VM du DC éteinte | Démarrer `PurpleAD-DC` avant toute jonction |
 | Commandes collées en SSH tronquées | Caractères perdus au collage | Retaper la commande |
 
+## Réalisation — KALI
+
+Machine d'attaque du lab, installée en dernier et **sans Internet** (réseau host-only) : l'ISO installeur de Kali embarque déjà la panoplie par défaut, pas besoin de `apt`.
+
+### Spécifications
+
+| Élément | Valeur |
+|---|---|
+| VM (VMware) | `PurpleAD-Kali` — 2 vCPU, 4 Go RAM, 40 Go, disque thin |
+| OS | Kali Linux 2026.3 (installeur `kali-linux-2026.3-installer-amd64.iso`) |
+| Réseau | **Custom : VMnet2 (Host-only)** — ⚠️ pas « Host-only » tout court (= VMnet1) ni NAT |
+| Hostname / IP | `kali` / `10.10.10.50` (statique) |
+| DNS | 10.10.10.10 (DC01) |
+| Compte local | `amin` (sudo) |
+
+### 1. Installation (offline)
+
+Pas de DHCP sur VMnet2 → configuration réseau **manuelle** dans l'installeur :
+
+| Champ | Valeur |
+|---|---|
+| Adresse IP | `10.10.10.50` |
+| Masque réseau | `255.255.255.0` |
+| Passerelle | *(vide — réseau isolé)* |
+| Serveur de noms | `10.10.10.10` |
+| Nom de domaine | *(vide — Kali n'est pas jointe au domaine)* |
+| Miroir réseau | **Non** (pas d'Internet ; installation depuis l'ISO) |
+| GRUB | `/dev/sda` (disque unique) |
+
+### 2. Accès d'administration (SSH)
+
+```bash
+sudo systemctl enable --now ssh
+```
+
+Depuis l'hôte : `ssh amin@10.10.10.50`.
+
+### 3. Vérifications
+
+| Test | Commande | Résultat obtenu |
+|---|---|---|
+| Adresse IP | `ip -br a` | `eth0 … 10.10.10.50/24` |
+| Joint le DC | `ping -c 2 10.10.10.10` | réponses |
+| Résolution DNS | `nslookup dc01.purplelab.local 10.10.10.10` | `→ 10.10.10.10` |
+| Outils présents | `which nxc impacket-GetNPUsers impacket-GetUserSPNs bloodhound-python` | tous trouvés |
+
+### 4. Problèmes rencontrés
+
+| Problème | Cause | Solution |
+|---|---|---|
+| Boucle PXE « Operating System not found » au reboot | VM éteinte avant la fin de l'install → disque vide, la VM tente le boot réseau | Rebrancher l'ISO (CD/DVD « Connect at power on »), rebooter dessus et **refaire l'install jusqu'au bout** (au besoin Power On to Firmware → Boot → CD-ROM) |
+| `ping 10.10.10.10` → `Destination Host Unreachable` malgré la bonne IP | Carte réseau sur le mauvais switch (Host-only/VMnet1 ou NAT), pas VMnet2 | VM Settings → Network Adapter → **Custom : VMnet2**, puis `sudo ip link set eth0 down && sudo ip link set eth0 up` |
+
+### Mise à jour (optionnelle)
+
+Les outils sont déjà présents. Pour mettre Kali à jour avant une campagne : ajouter une carte **NAT temporaire**, `sudo apt update && sudo apt full-upgrade`, puis retirer la carte NAT (retour VMnet2 seul).
+
 ### Étape suivante
 
-Installation de `KALI` (10.10.10.50) et du `SIEM` (10.10.10.100).
+La VM `SIEM` (10.10.10.100, Wazuh all-in-one + serveur Velociraptor) et la télémétrie sont documentées dans [`02-telemetrie.md`](02-telemetrie.md). Après la validation d'ingestion : Sysmon sur le DC → snapshot `DC-ADDS-clean` → pose des vulnérabilités → snapshot `clean-baseline`.

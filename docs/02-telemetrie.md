@@ -126,6 +126,24 @@ Les trois endpoints sont en ligne (DC01, CLIENT01, CLIENT02).
 ![Paramètre IocRegex](images/s15-ingestion/s15-ingestion-06-evtxhunter-iocregex.png)
 ![Résultats EvtxHunter](images/s15-ingestion/s15-ingestion-07-evtxhunter-resultats.png)
 
+### Validation depuis Kali (événements d'attaque)
+
+Une fois Kali installée (10.10.10.50), génération d'échecs d'authentification contre le DC pour vérifier l'ingestion des événements Kerberos / NTLM :
+
+```bash
+# 4625 + 4776 — NTLM, utilisateur inexistant (aucun compte réel à verrouiller)
+nxc smb 10.10.10.10 -u pentest_fake -p 'Wrong123!'
+# 4771 — échec de pré-auth Kerberos sur un compte réel (une tentative)
+impacket-getTGT purplelab.local/Administrateur:'Wrong123!' -dc-ip 10.10.10.10
+```
+
+| Source | Event ID | Agent | Archives |
+|---|---|---|---|
+| Échec d'ouverture de session | 4625 | DC01 (001) | ✅ |
+| Échec de pré-auth Kerberos | 4771 | DC01 (001) | ✅ |
+| Validation d'identifiants NTLM | 4776 | DC01 (001) | ✅ |
+
+Les six sources Windows + ces trois événements d'attaque confirment la chaîne de bout en bout. **S15 est complet.**
+
 ### Reste
-- Events d'attaque **4625 / 4771 / 4776** depuis Kali — à valider une fois Kali installé (réactiver `logall` le temps du test).
-- Canaux Sysmon / PowerShell à ajouter aussi sur CLIENT02.
+- Canaux Sysmon / PowerShell à ajouter aussi sur **CLIENT02** (faits sur CLIENT01).
