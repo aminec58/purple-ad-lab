@@ -1,0 +1,39 @@
+<!--
+  Scenario 3 : Kerberoasting (T1558.003)
+  A ajouter dans /var/ossec/etc/rules/local_rules.xml sur le SIEM.
+
+  Pourquoi ces parents : un 4769 reussi tombe dans 60106 (Windows Logon Success),
+  puis dans 92651 (niveau 0) des que ipAddress contient une IPv4. Toute demande de
+  ticket venue du reseau est donc muette par defaut. Les regles s'accrochent aux deux.
+
+  100130 : ticket de service RC4 pour un compte qui n'est ni machine ni krbtgt
+  100131 : au moins 2 services differents en RC4 depuis la meme IP en 60 s
+  100132 : n'importe quelle demande de ticket pour le compte SPN leurre
+-->
+<group name="purplelab,kerberoasting,">
+  <rule id="100130" level="12">
+    <if_sid>60106, 92651</if_sid>
+    <field name="win.system.eventID">^4769$</field>
+    <field name="win.eventdata.status">^0x0$</field>
+    <field name="win.eventdata.ticketEncryptionType">^0x17$</field>
+    <field name="win.eventdata.serviceName" type="pcre2" negate="yes">(?i)\$$|^krbtgt$</field>
+    <description>Kerberoasting possible : ticket de service RC4 pour $(win.eventdata.serviceName) demandé par $(win.eventdata.targetUserName) depuis $(win.eventdata.ipAddress)</description>
+    <mitre><id>T1558.003</id></mitre>
+  </rule>
+
+  <rule id="100131" level="14" frequency="2" timeframe="60">
+    <if_matched_sid>100130</if_matched_sid>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <different_field>win.eventdata.serviceName</different_field>
+    <description>Kerberoasting : plusieurs tickets de service RC4 demandés depuis $(win.eventdata.ipAddress)</description>
+    <mitre><id>T1558.003</id></mitre>
+  </rule>
+
+  <rule id="100132" level="15">
+    <if_sid>100130, 60106, 92651</if_sid>
+    <field name="win.system.eventID">^4769$</field>
+    <field name="win.eventdata.serviceName" type="pcre2">(?i)^svc-mssql-legacy$</field>
+    <description>Kerberoasting : ticket demandé pour le compte SPN leurre svc-mssql-legacy par $(win.eventdata.targetUserName) depuis $(win.eventdata.ipAddress)</description>
+    <mitre><id>T1558.003</id></mitre>
+  </rule>
+</group>

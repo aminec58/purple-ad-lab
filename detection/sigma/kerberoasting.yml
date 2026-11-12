@@ -1,0 +1,55 @@
+title: Kerberoasting - ticket de service RC4 pour un compte utilisateur
+id: 6b0d3c1e-8f2a-4c57-9a61-2e4f7d8b1c30
+status: experimental
+description: |
+  Demande reussie de ticket de service Kerberos (4769) chiffre en RC4 pour un compte
+  qui n'est ni un compte machine ni krbtgt. Sur un domaine ou tout tourne en AES,
+  c'est la signature d'outils comme Impacket GetUserSPNs ou Rubeus kerberoast.
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+author: aminec58
+date: 2026-11-12
+tags:
+  - attack.credential-access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4769
+    Status: '0x0'
+    TicketEncryptionType: '0x17'
+  filter_machine:
+    ServiceName|endswith: '$'
+  filter_krbtgt:
+    ServiceName: 'krbtgt'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Applications anciennes qui ne savent faire que du RC4
+level: high
+---
+title: Kerberoasting - ticket demande pour le compte SPN leurre
+id: 9e4a7b52-1d3c-4f80-b6e2-5c7a0d9f4e18
+status: experimental
+description: |
+  Le compte svc-mssql-legacy porte un SPN mais aucun service reel ne l'utilise.
+  Toute demande de ticket pour ce compte est suspecte, quel que soit le chiffrement.
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+author: aminec58
+date: 2026-11-12
+tags:
+  - attack.credential-access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4769
+    ServiceName: 'svc-mssql-legacy'
+  condition: selection
+falsepositives:
+  - Aucun attendu
+level: critical

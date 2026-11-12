@@ -1,0 +1,58 @@
+name: Custom.PurpleLab.Kerberoast
+description: |
+  Chasse au Kerberoasting (T1558.003) sur un controleur de domaine.
+  Events : tickets de service (4769) reussis en RC4 pour des comptes
+  utilisateur porteurs de SPN. Summary : regroupement par IP source.
+  Exposure : comptes a SPN et types de chiffrement autorises.
+author: aminec58
+type: CLIENT
+required_permissions:
+  - EXECVE
+
+parameters:
+  - name: EvtxPath
+    default: C:\Windows\System32\winevt\Logs\Security.evtx
+
+sources:
+  - name: Events
+    query: |
+      SELECT timestamp(epoch=System.TimeCreated.SystemTime) AS Time,
+             EventData.TargetUserName AS Requester,
+             EventData.ServiceName AS Service,
+             format(format="%v", args=EventData.TicketEncryptionType) AS EncType,
+             format(format="%v", args=EventData.TicketOptions) AS Options,
+             EventData.IpAddress AS SourceIP
+      FROM parse_evtx(filename=EvtxPath)
+      WHERE System.EventID.Value = 4769
+        AND format(format="%v", args=EventData.Status) =~ "^(0|0x0)$"
+        AND EncType =~ "^(23|0x17)$"
+        AND NOT Service =~ "\\$$"
+        AND NOT Service =~ "(?i)^krbtgt$"
+
+  - name: Summary
+    query: |
+      LET hits = SELECT System.TimeCreated.SystemTime AS Epoch,
+             EventData.TargetUserName AS Requester,
+             EventData.ServiceName AS Service,
+             EventData.IpAddress AS SourceIP
+      FROM parse_evtx(filename=EvtxPath)
+      WHERE System.EventID.Value = 4769
+        AND format(format="%v", args=EventData.Status) =~ "^(0|0x0)$"
+        AND format(format="%v", args=EventData.TicketEncryptionType) =~ "^(23|0x17)$"
+        AND NOT EventData.ServiceName =~ "\\$$"
+        AND NOT EventData.ServiceName =~ "(?i)^krbtgt$"
+
+      SELECT SourceIP, Requester, count() AS Requests,
+             enumerate(items=Service) AS Services,
+             timestamp(epoch=min(item=Epoch)) AS First,
+             timestamp(epoch=max(item=Epoch)) AS Last
+      FROM hits
+      GROUP BY format(format="%v|%v", args=[SourceIP, Requester])
+
+  - name: Exposure
+    query: |
+      LET cmd = '''$u = Get-ADUser -Filter "ServicePrincipalName -like '*'" -Properties ServicePrincipalName,msDS-SupportedEncryptionTypes,PasswordLastSet | Where-Object { $_.SamAccountName -ne 'krbtgt' }; ConvertTo-Json -Compress -InputObject @($u | Select-Object SamAccountName, @{n='SPN';e={$_.ServicePrincipalName -join ';'}}, @{n='EncTypes';e={$_.'msDS-SupportedEncryptionTypes'}}, @{n='PwdLastSet';e={$_.PasswordLastSet.ToString('s')}})'''
+      LET out = SELECT Stdout FROM execve(
+          argv=["powershell.exe", "-NoProfile", "-Command", cmd], length=1000000)
+      SELECT * FROM foreach(row=out, query={
+          SELECT * FROM parse_json_array(data=Stdout) })
