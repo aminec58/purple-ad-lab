@@ -1,0 +1,26 @@
+name: Custom.PurpleLab.ASREPRoast
+description: |
+  Chasse AS-REP roasting (T1558.004) : TGT délivrés sans pré-authentification
+  (4768, PreAuthType=0, succès) et comptes exposés DONT_REQ_PREAUTH.
+type: CLIENT
+required_permissions:
+  - EXECVE
+parameters:
+  - name: EvtxPath
+    default: C:/Windows/System32/winevt/Logs/Security.evtx
+sources:
+  - name: Events
+    query: |
+      SELECT timestamp(epoch=System.TimeCreated.SystemTime) AS TimeUTC,
+             EventData.TargetUserName AS Account,
+             EventData.IpAddress AS SourceIP,
+             EventData.TicketEncryptionType AS EncType,
+             EventData.PreAuthType AS PreAuth
+      FROM parse_evtx(filename=EvtxPath)
+      WHERE System.EventID.Value = 4768
+        AND format(format="%v", args=EventData.PreAuthType) = "0"
+        AND format(format="%v", args=EventData.Status) =~ "^(0|0x0)$"
+  - name: Exposure
+    query: |
+      SELECT Stdout FROM execve(argv=["powershell.exe","-NoProfile","-Command",
+        "Get-ADUser -Filter 'DoesNotRequirePreAuth -eq $true' | Select -Expand SamAccountName"])

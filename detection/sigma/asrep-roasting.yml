@@ -1,0 +1,21 @@
+title: AS-REP Roasting - TGT délivré sans pré-authentification
+id: 3f7c2a1e-8b4d-4e6a-9c51-2d7e0b9f4a63
+status: experimental
+description: Détecte un TGT Kerberos délivré à un compte dont la pré-authentification est désactivée (DONT_REQ_PREAUTH).
+author: Amine Cherif
+date: 2026-11-12
+tags:
+  - attack.credential_access
+  - attack.t1558.004
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4768
+    PreAuthType: '0'
+    Status: '0x0'
+  condition: selection
+falsepositives:
+  - Comptes legacy volontairement configurés sans pré-authentification
+level: high
