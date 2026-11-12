@@ -1,60 +1,48 @@
-# Scénario 1 — Password spraying (T1110.003)
+# Scénario 1 : password spraying (T1110.003)
 
-| | |
-|---|---|
-| **Technique** | MITRE ATT&CK [T1110.003 — Brute Force: Password Spraying](https://attack.mitre.org/techniques/T1110/003/) |
-| **Outil** | NetExec (`nxc`, successeur de CrackMapExec) |
-| **Source → cible** | Kali `10.10.10.50` → DC01 `10.10.10.10` |
-| **Faiblesse exploitée** | Mot de passe saisonnier `Automne2026!` partagé par `j.dupont` et `m.martin`, aucun verrouillage de compte (`LockoutThreshold 0`) |
-| **Date** | 2026-11-11 (ticket Plane S16) |
-| **État** | ✅ Terminé : détection déclenchée au rejeu **et** attaque bloquée |
+Premier scénario du lab. L'attaque part de Kali (10.10.10.50) et vise le contrôleur de domaine DC01 (10.10.10.10) avec NetExec (`nxc`). Référence MITRE ATT&CK : [T1110.003, Password Spraying](https://attack.mitre.org/techniques/T1110/003/).
 
-## Résumé
+## Le principe
 
-Un attaquant sans identifiant teste **un seul mot de passe sur plusieurs comptes**, pour rester sous les seuils de détection par compte. Dans le lab, une passe de 5 tentatives suffit à compromettre 2 comptes. Wazuh voit chaque échec mais ne qualifie pas l'attaque, et la variante Kerberos passe totalement sous le radar. Deux règles de corrélation et un durcissement de la politique de mots de passe corrigent les deux écarts.
+Au lieu de tester beaucoup de mots de passe sur un compte, on teste un seul mot de passe sur beaucoup de comptes. Chaque compte ne reçoit qu'une tentative, donc aucun ne se verrouille et les détections qui comptent les échecs par compte ne voient rien.
 
----
+## La faiblesse dans le lab
 
-## 1. Attaque
+Deux utilisateurs, `j.dupont` et `m.martin`, ont le même mot de passe saisonnier, `Automne2026!`, et le domaine n'a aucun verrouillage de compte (`LockoutThreshold` à 0). Les comptes `l.bernard` et `s.petit` ont un mot de passe fort et servent de leurres. `a.roux` est réservé au scénario 2.
 
-🖥️ **PurpleAD-Kali**
+## Attaque
+
+Sur Kali, je prépare la liste des comptes puis je lance le même mot de passe sur tous, d'abord en NTLM, ensuite en Kerberos :
 
 ```bash
 mkdir -p ~/s16 && cd ~/s16
 printf '%s\n' j.dupont m.martin a.roux l.bernard s.petit > users.txt
 
-# Variante NTLM (-> 4625 + 4776 sur le DC)
+# NTLM
 nxc smb 10.10.10.10 -u users.txt -p 'Automne2026!' --continue-on-success
 
-# Variante Kerberos (-> 4771 sur le DC)
+# Kerberos
 nxc smb dc01.purplelab.local -u users.txt -p 'Automne2026!' -k --continue-on-success
+```
 
-# Low and slow : un mot de passe par tour, pause entre les tours
+J'ai aussi testé une version plus lente, avec un mot de passe par tour et une minute de pause entre les tours :
+
+```bash
 for p in 'Hiver2026!' 'Ete2026!' 'Automne2026!'; do
   nxc smb 10.10.10.10 -u users.txt -p "$p" --continue-on-success
   sleep 60
 done
 ```
 
-**Résultat :** `[+]` sur `j.dupont` et `m.martin`, en NTLM comme en Kerberos.
+Cinq tentatives suffisent : `j.dupont` et `m.martin` tombent dans les deux modes.
 
-![Attaque initiale](../images/s16-spraying/01-attaque.png)
+![Résultat du spray en NTLM puis en Kerberos](../images/s16-spraying/01-attaque.png)
 
-**Observation annexe :** en mode Kerberos, `nxc` signale `a.roux account vulnerable to asreproast attack`. Le compte n'exige pas de pré-authentification : le DC ne journalise donc aucun 4771 pour lui. C'est la faiblesse exploitée au [scénario 2](02-asrep-roasting.md).
+En Kerberos, `nxc` affiche aussi `a.roux account vulnerable to asreproast attack`. Ce n'est pas une connexion réussie : le compte n'exige pas de pré-authentification, ce qui est la faiblesse du [scénario 2](02-asrep-roasting.md). Conséquence utile à connaître pour la suite : le DC ne journalise aucun événement 4771 pour ce compte.
 
----
+## Ce que Wazuh a vu
 
-## 2. Détection Wazuh (avant remédiation)
-
-| Événement | Règle native | Niveau | Verdict |
-|---|---|---|---|
-| 4625 (échec NTLM) | `60122` Logon Failure | 5 | Vu, mais unitairement, noyé parmi des centaines de logons réussis |
-| Rafale de 4625 | `60204` Multiple Windows Logon Failures | 10 | Une seule alerte, déclenchée par le volume cumulé. Ne dit ni « comptes distincts » ni T1110.003 |
-| 4771 (pré-auth Kerberos échouée) | `60104` Windows audit failure event | 5 | **Angle mort** : aucune règle native ne traite le 4771, il tombe dans le générique |
-| 4776 (validation NTLM) | `60104` | 5 | Idem, générique |
-| 4624 réussi depuis Kali | `92652` | 6 | Vu, mais étiqueté « possible pass-the-hash » et non relié aux échecs |
-
-Comptage des alertes sur le SIEM après l'attaque :
+Voici le décompte des alertes sur le SIEM juste après l'attaque :
 
 ```text
       1 "rule":{"level":10,"description":"Multiple Windows Logon Failures","id":"60204"
@@ -64,81 +52,85 @@ Comptage des alertes sur le SIEM après l'attaque :
       1 "rule":{"level":6,"description":"Successful Remote Logon Detected - User:\\m.martin - NTLM authentication, possible pass-the-hash attack.","id":"92652"
 ```
 
-**Pourquoi Wazuh rate l'attaque :** les règles natives comptent des échecs **par source**. La signature du spraying est le nombre de **comptes distincts** visés par une même source. Une passe unique (3 échecs) reste sous le seuil de `60204`, et la variante Kerberos n'est corrélée par rien.
+Le dashboard raconte la même chose. En filtrant sur le DC et sur ces règles, on obtient 70 alertes sur la journée, un pic très net au moment de l'attaque, et aucune alerte de niveau 12 ou plus. Côté MITRE, Wazuh range ça dans « Brute Force » au sens large, sans parler de spraying.
 
----
+![Dashboard Wazuh filtré sur les règles natives : 70 alertes, aucune de niveau 12](../images/s16-spraying/02-wazuh-natif-dashboard.png)
 
-## 3. Chasse Velociraptor
+Dans la liste des événements, ce sont des échecs de connexion de niveau 5, un par ligne :
 
-**Hypothèse :** une même adresse IP a échoué à s'authentifier sur au moins 4 comptes distincts du domaine ; les traces sont dans le journal Security du DC (4625 et 4771).
+![Événements natifs : échecs unitaires de niveau 5](../images/s16-spraying/03-wazuh-natif-events.png)
 
-**Artefact :** [`hunting/velociraptor/Custom.PurpleLab.PasswordSpray.yaml`](../../hunting/velociraptor/Custom.PurpleLab.PasswordSpray.yaml), collecté sur DC01.
+Wazuh n'est pas aveugle, mais il ne comprend pas ce qui se passe.
 
-**Résultat :**
-
-| SrcIP | DistinctUsers | Failures | FirstSeen (UTC) | LastSeen (UTC) |
-|---|---|---|---|---|
-| 10.10.10.50 | 7 | 44 | 2026-11-11 10:15:56 | 2026-11-11 16:58:49 |
-
-Les 7 comptes sont les 5 cibles du spray, plus `pentest_fake` et `Administrateur`, issus des tests d'ingestion du matin (S15) depuis la même machine. L'hypothèse est confirmée : une seule source, plusieurs comptes.
-
-![Chasse Velociraptor](../images/s16-spraying/02-velociraptor.png)
-
-**Pivot possible :** rechercher les 4624 de type 3 depuis `10.10.10.50` dans la même fenêtre pour lister les comptes effectivement compromis.
-
----
-
-## 4. Remédiation
-
-### 4.1 Règles de détection
-
-- Wazuh : [`detection/wazuh-rules/password-spraying.xml`](../../detection/wazuh-rules/password-spraying.xml) (déployé dans `/var/ossec/etc/rules/local_rules.xml`)
-- Sigma : [`detection/sigma/password-spraying.yml`](../../detection/sigma/password-spraying.yml)
-
-| Règle | Logique | Niveau |
+| Événement Windows | Règle Wazuh | Ce que ça donne |
 |---|---|---|
-| `100110` | 3 × 4625 (`60122`) en 5 min, même IP, comptes différents | 12 |
-| `100101` | 4771 avec `status` `0x18` (mauvais mot de passe) ou `0x12` (compte verrouillé) | 5 |
-| `100111` | 2 × `100101` en 5 min, même IP, comptes différents | 12 |
+| 4625, échec NTLM | 60122, niveau 5 | Une alerte par échec, noyée dans plusieurs centaines de connexions réussies |
+| Rafale de 4625 | 60204, niveau 10 | Une seule alerte, déclenchée par le volume total, sans notion de comptes différents |
+| 4771, échec de pré-authentification Kerberos | 60104, niveau 5 | Aucune règle dédiée, l'événement finit dans la règle générique « audit failure » |
+| 4624, connexion NTLM réussie | 92652, niveau 6 | Vue, mais étiquetée « possible pass-the-hash » et pas reliée aux échecs |
 
-> **Seuils calibrés pour un lab de 5 comptes.** En production, viser 10 à 20 comptes distincts pour limiter les faux positifs (NAT, proxy d'authentification, serveur applicatif).
+Le problème de fond est que les règles par défaut comptent les échecs par source, alors que ce qui caractérise un spray est le nombre de comptes différents visés par une même source. Une passe unique ne produit que trois échecs (les deux comptes compromis n'en génèrent pas), ce qui reste sous le seuil de la règle 60204. Et la variante Kerberos n'est corrélée par rien du tout.
 
-### 4.2 Durcissement AD
+## Chasse avec Velociraptor
 
-🖥️ **PurpleAD-DC**
+Mon hypothèse de départ : si quelqu'un a fait du spraying, une même adresse IP a échoué sur plusieurs comptes différents, et la trace est dans le journal Security du DC, dans les événements 4625 et 4771.
+
+J'ai écrit un artefact qui lit ce journal, regroupe les échecs par adresse source et compte les comptes distincts : [`Custom.PurpleLab.PasswordSpray`](../../hunting/velociraptor/Custom.PurpleLab.PasswordSpray.yaml). Il ne remonte que les sources ayant échoué sur au moins 4 comptes.
+
+Collecté sur DC01, il renvoie une seule ligne : 10.10.10.50, 7 comptes distincts, 44 échecs.
+
+![Résultat de la collecte Velociraptor](../images/s16-spraying/04-velociraptor.png)
+
+Les 7 comptes sont les 5 de ma liste, plus `pentest_fake` et `Administrateur`. Ces deux-là viennent de mes tests d'ingestion du matin, lancés depuis la même Kali. Les heures affichées sont en UTC.
+
+Pour aller plus loin, il suffirait de chercher les connexions réussies (4624, type 3) depuis cette adresse dans la même fenêtre de temps : ce sont les comptes réellement compromis.
+
+## Remédiation
+
+### Règles Wazuh
+
+J'ai ajouté trois règles dans `local_rules.xml` sur le manager. Le fichier est dans le dépôt : [`password-spraying.xml`](../../detection/wazuh-rules/password-spraying.xml). Une version Sigma, indépendante du SIEM, est dans [`password-spraying.yml`](../../detection/sigma/password-spraying.yml).
+
+| Règle | Ce qu'elle fait | Niveau |
+|---|---|---|
+| 100110 | 3 échecs NTLM (règle 60122) en 5 minutes, depuis la même IP, sur des comptes différents | 12 |
+| 100101 | Isole les 4771 dont le code est `0x18` (mauvais mot de passe) ou `0x12` (compte verrouillé) | 5 |
+| 100111 | 2 alertes 100101 en 5 minutes, depuis la même IP, sur des comptes différents | 12 |
+
+Les seuils sont volontairement bas parce que le lab n'a que cinq comptes. Sur un vrai domaine, il faudrait viser plutôt 10 à 20 comptes distincts, sinon une passerelle NAT ou un serveur applicatif déclencherait la règle en permanence.
+
+### Durcissement de l'AD
+
+Sur DC01 :
 
 ```powershell
 Set-ADDefaultDomainPasswordPolicy -Identity purplelab.local `
   -LockoutThreshold 5 -LockoutDuration 00:30:00 -LockoutObservationWindow 00:30:00 `
   -MinPasswordLength 14 -ComplexityEnabled $true
+```
 
-# Réinitialisation des comptes compromis (mot de passe aléatoire)
+Puis réinitialisation des deux comptes compromis avec un mot de passe aléatoire :
+
+```powershell
 'j.dupont','m.martin' | % {
   $p = -join ((48..57 + 65..90 + 97..122 | Get-Random -Count 20 | % {[char]$_})) + '!9aZ'
   Set-ADAccountPassword $_ -Reset -NewPassword (ConvertTo-SecureString $p -AsPlainText -Force)
 }
 ```
 
-La nouvelle politique s'applique immédiatement : un mot de passe de 12 caractères est refusé lors de la réinitialisation.
+La politique s'applique tout de suite. À ma première tentative de réinitialisation, j'avais saisi un mot de passe de 12 caractères et le DC l'a refusé :
 
-![Réinitialisation refusée par la politique durcie](../images/s16-spraying/03-reset-refuse.png)
+![Mot de passe trop court refusé par la nouvelle politique](../images/s16-spraying/05-reset-refuse.png)
 
-- Le **verrouillage** limite l'attaque (4 essais par compte et par 30 min restent possibles).
-- La **fin des mots de passe faibles** est ce qui la bloque.
+## Rejeu
 
----
+J'ai relancé exactement les mêmes commandes. Tout n'a pas marché du premier coup, et c'est la partie la plus instructive du scénario.
 
-## 5. Rejeu
+### La règle Kerberos qui ne se déclenchait pas
 
-🖥️ **PurpleAD-Kali** : mêmes commandes qu'à l'étape 1.
+Au premier rejeu, la règle NTLM (100110) s'est déclenchée, mais pas la règle Kerberos. J'ai d'abord cru à une erreur dans la règle. En affichant l'événement brut, j'ai vu que les 4771 portaient le code `0x12` et non `0x18` : j'avais déjà activé le verrouillage, et à force de tests `l.bernard` et `s.petit` étaient verrouillés. Le DC ne répondait plus « mauvais mot de passe » mais « compte révoqué ».
 
-| Critère | Preuve | État |
-|---|---|---|
-| Détection NTLM | `100110`, niveau 12, à 17:52:44 | ✅ |
-| Détection Kerberos | `100101` puis `100111` × 3, de 17:52:59 à 17:53:01 | ✅ |
-| Blocage | 5 × `STATUS_LOGON_FAILURE` en NTLM, `KDC_ERR_PREAUTH_FAILED` en Kerberos, aucun `[+]` avec `Automne2026!` | ✅ |
-
-Alertes Kerberos sur le SIEM (heure, règle, compte, `status`) : les 4771 antérieurs restent en `60104`, ceux du rejeu passent en `100101` puis `100111`.
+La règle était donc correcte, mais trop étroite. Un spray qui tombe sur des comptes verrouillés reste un spray, donc elle accepte maintenant les deux codes. Après déverrouillage des comptes, les deux détections se déclenchent :
 
 ```text
 17:44:50 60104  l.bernard 0x12
@@ -149,21 +141,44 @@ Alertes Kerberos sur le SIEM (heure, règle, compte, `status`) : les 4771 antér
 17:53:01 100111 s.petit   0x18
 ```
 
-![Rejeu final : plus aucun succès](../images/s16-spraying/05-rejeu-ok.png)
+Les deux premières lignes sont les événements d'avant la correction, restés dans la règle générique. Les suivantes sont celles du rejeu.
 
----
+### L'ancien mot de passe encore accepté
 
-## Enseignements
+Deuxième surprise : juste après la réinitialisation, `Automne2026!` était bien refusé en Kerberos, mais encore accepté en NTLM pour les deux comptes.
 
-1. **`0x18` ≠ `0x12`.** Un 4771 porte `0x18` pour un mauvais mot de passe et `0x12` (`KDC_ERR_CLIENT_REVOKED`) pour un compte verrouillé ou désactivé. Une règle limitée à `0x18` devient aveugle dès que le spray verrouille ses cibles. La règle `100101` accepte les deux.
-2. **Le verrouillage a un coût.** Pendant les tests, `l.bernard` et `s.petit` (comptes légitimes, jamais compromis) ont été verrouillés par l'attaquant. Le verrouillage seul transforme le spraying en déni de service ; il doit s'accompagner d'une détection et de mots de passe robustes.
-3. **Réinitialiser un mot de passe ne coupe pas l'accès NTLM immédiatement.** Juste après la réinitialisation, `Automne2026!` était refusé en Kerberos mais **encore accepté en NTLM** (capture ci-dessous). Ce comportement est cohérent avec la tolérance Windows sur le mot de passe précédent (n-1) en authentification NTLM réseau (`OldPasswordAllowedPeriod`, 60 min par défaut). Une **seconde réinitialisation** a fait sortir l'ancien mot de passe de cette fenêtre. En réponse à incident : réinitialiser deux fois un compte compromis.
-4. **Kerberos est l'angle mort natif de Wazuh** pour cette technique : aucun 4771 n'est corrélé sans règle personnalisée.
+![Après un seul reset, l'ancien mot de passe passe encore en NTLM](../images/s16-spraying/06-ntlm-ancien-mdp.png)
 
-![Ancien mot de passe encore accepté en NTLM après un seul reset](../images/s16-spraying/04-ntlm-ancien-mdp.png)
+Ce comportement correspond à une tolérance de Windows : après un changement, le mot de passe précédent reste utilisable un moment en authentification NTLM réseau (paramètre `OldPasswordAllowedPeriod`, 60 minutes par défaut), pour laisser le temps à la réplication entre contrôleurs de domaine. Je n'ai pas modifié ce paramètre. J'ai simplement réinitialisé les deux comptes une seconde fois, ce qui fait sortir `Automne2026!` de la fenêtre, et le rejeu suivant n'a plus donné aucun succès :
+
+![Rejeu final, cinq échecs](../images/s16-spraying/07-rejeu-ok.png)
+
+### Bilan
+
+Au rejeu, la règle 100110 s'est déclenchée pour le spray NTLM et la règle 100111 pour le spray Kerberos, toutes deux au niveau 12 avec l'adresse de Kali. Sur l'ensemble des rejeux, le dashboard compte 10 alertes, toutes de niveau 12, et les classe cette fois en « Password Spraying ».
+
+![Dashboard Wazuh filtré sur les nouvelles règles : 10 alertes de niveau 12, technique Password Spraying](../images/s16-spraying/08-wazuh-spraying-dashboard.png)
+
+![Les alertes 100110 (NTLM) et 100111 (Kerberos)](../images/s16-spraying/09-wazuh-spraying-events.png)
+
+Le détail d'une alerte porte bien l'identifiant MITRE et l'adresse source :
+
+![Détail d'une alerte : T1110.003 et adresse de Kali](../images/s16-spraying/10-wazuh-spraying-detail.png)
+
+Côté attaquant, plus aucun compte ne répond à `Automne2026!`. La détection fonctionne et l'attaque est bloquée.
+
+## Ce que j'ai appris
+
+Regarder l'événement brut avant de toucher à une règle. J'ai réécrit la règle Kerberos deux fois pour rien avant de lire le champ `status`, qui donnait la réponse tout de suite.
+
+Le verrouillage de compte n'est pas une solution à lui seul. Il limite le nombre d'essais, mais pendant mes tests ce sont deux comptes légitimes, jamais compromis, qui se sont retrouvés bloqués. Un attaquant peut s'en servir pour faire du déni de service. Ce qui arrête vraiment le spraying, c'est l'absence de mots de passe devinables.
+
+Réinitialiser un mot de passe compromis ne coupe pas l'accès immédiatement en NTLM. En réponse à incident, il faut le faire deux fois, ou réduire `OldPasswordAllowedPeriod`.
+
+Kerberos est le point faible de Wazuh sur cette technique : sans règle personnalisée, les 4771 ne sont jamais corrélés.
 
 ## Limites
 
-- Détection par fenêtre de 5 min : un spray très lent (un essai par compte toutes les 10 min) passe dessous. Piste : corrélation longue durée côté indexer.
-- Seuils bas, adaptés au lab uniquement.
-- Les 4768 en échec (`0x6`, compte inexistant) ne sont pas couverts : une énumération d'utilisateurs Kerberos reste hors périmètre.
+La corrélation se fait sur 5 minutes. Un spray très lent, par exemple un essai par compte toutes les dix minutes, passerait en dessous. Il faudrait une corrélation sur une durée plus longue, côté indexer.
+
+Les règles ne couvrent pas les 4768 en échec avec le code `0x6` (compte inexistant). Une énumération d'utilisateurs par Kerberos n'est donc pas détectée ici.
