@@ -1,0 +1,52 @@
+<!--
+  Scenario 4 : Pass-the-Hash + mouvement lateral (T1550.002)
+  A ajouter dans /var/ossec/etc/rules/local_rules.xml sur le SIEM.
+
+  Contexte observe en S19 :
+  - le rejeu d'un hash NTLM produit un logon reseau 4624 type 3 en NTLM ;
+  - la regle native 92652 (possible pass-the-hash) se declenche sur TOUT logon
+    NTLM reseau reussi : utile mais bruyant, et jamais en niveau >= 12 ;
+  - le dump (lsadump::sam, puis sekurlsa sur LSASS) n'est pas trace sans Sysmon
+    Event 10 ;
+  - le mouvement lateral via atexec cree une tache planifiee (4698) non auditee
+    par defaut.
+
+  Parents a confirmer au rejeu (comme en S18, un 4624 reseau peut tomber dans
+  60106 puis 92651/92652). Les regles ci-dessous s'accrochent a ces parents.
+
+  100140 : logon NTLM reseau (type 3) reussi, hors compte machine et ANONYMOUS
+           - signale le rejeu d'un hash.
+  100141 : acces a la memoire de LSASS (Sysmon Event 10) avec un GrantedAccess de
+           dump - necessite d'ajouter <ProcessAccess> sur lsass.exe dans la config
+           Sysmon (remediation telemetrie du scenario).
+  100142 : creation d'une tache planifiee (4698) - methode atexec du mouvement
+           lateral - necessite l'audit "Other Object Access Events".
+-->
+<group name="purplelab,pass-the-hash,">
+
+  <rule id="100140" level="12">
+    <if_sid>60106, 92651, 92652</if_sid>
+    <field name="win.system.eventID">^4624$</field>
+    <field name="win.eventdata.logonType">^3$</field>
+    <field name="win.eventdata.authenticationPackageName" type="pcre2">(?i)NTLM</field>
+    <field name="win.eventdata.targetUserName" type="pcre2" negate="yes">(?i)\$$|^ANONYMOUS LOGON$</field>
+    <description>Pass-the-Hash possible : logon NTLM reseau (type 3) reussi pour $(win.eventdata.targetUserName) depuis $(win.eventdata.ipAddress)</description>
+    <mitre><id>T1550.002</id></mitre>
+  </rule>
+
+  <rule id="100141" level="14">
+    <if_sid>61613</if_sid>
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
+    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1010|1410|1438|143a|1fffff)$</field>
+    <description>Acces suspect a la memoire de LSASS (dump d'identifiants) par $(win.eventdata.sourceImage)</description>
+    <mitre><id>T1003.001</id></mitre>
+  </rule>
+
+  <rule id="100142" level="12">
+    <if_sid>60106</if_sid>
+    <field name="win.system.eventID">^4698$</field>
+    <description>Tache planifiee creee - possible mouvement lateral atexec par $(win.eventdata.subjectUserName)</description>
+    <mitre><id>T1053.005</id></mitre>
+  </rule>
+
+</group>
