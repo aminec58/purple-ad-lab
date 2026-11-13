@@ -1,0 +1,32 @@
+name: Custom.PurpleLab.PassTheHash
+description: |
+  Chasse au Pass-the-Hash et au mouvement lateral (T1550.002) sur un poste
+  Windows. Les journaux ne gardent pas tout : sans Sysmon Event 10 l'acces a la
+  memoire de LSASS n'est pas trace, et un binaire d'attaque peut etre efface
+  apres coup. On cherche donc la preuve d'EXECUTION laissee sur le disque.
+  ToolExec : fichiers Prefetch des outils de dump d'identifiants et de mouvement
+  lateral. Valide en S19 : a retrouve MIMIKATZ.EXE (RunCount, derniere execution)
+  alors que Wazuh n'avait pas qualifie l'outil.
+author: aminec58
+type: CLIENT
+
+parameters:
+  - name: ToolRegex
+    description: Outils recherches dans le Prefetch (regex, insensible a la casse)
+    default: "(?i)MIMIKATZ|PROCDUMP|NANODUMP|SECRETSDUMP|WMIEXEC|SMBEXEC|PSEXESVC|PAEXEC|RUBEUS|SHARPHOUND"
+
+sources:
+  - name: ToolExec
+    query: |
+      SELECT Executable,
+             RunCount,
+             LastRunTimes,
+             ExecutablePath,
+             Hash
+      FROM Artifact.Windows.Forensics.Prefetch()
+      WHERE Executable =~ ToolRegex
+
+  - name: AmcacheExec
+    query: |
+      SELECT * FROM Artifact.Windows.Forensics.Amcache()
+      WHERE Name =~ ToolRegex
