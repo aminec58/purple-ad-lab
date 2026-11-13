@@ -1,0 +1,64 @@
+title: Pass-the-Hash - logon NTLM reseau reussi
+id: 2f7c4e90-5a1b-4d63-8c2f-9b0e7a1d6c42
+status: experimental
+description: |
+  Logon reseau reussi (4624 type 3) negocie en NTLM pour un compte qui n'est ni
+  machine ni ANONYMOUS LOGON. Sur un domaine ou l'authentification passe par
+  Kerberos, un logon NTLM reseau d'un compte local reutilise est la signature du
+  rejeu d'un hash (CrackMapExec/NetExec -H, Impacket, mimikatz sekurlsa::pth).
+references:
+  - https://attack.mitre.org/techniques/T1550/002/
+author: aminec58
+date: 2026-11-13
+tags:
+  - attack.lateral-movement
+  - attack.t1550.002
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4624
+    LogonType: 3
+    AuthenticationPackageName: 'NTLM'
+  filter_machine:
+    TargetUserName|endswith: '$'
+  filter_anon:
+    TargetUserName: 'ANONYMOUS LOGON'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Applications ou sauvegardes anciennes qui s'authentifient encore en NTLM
+level: high
+---
+title: Acces a la memoire de LSASS - dump d'identifiants
+id: 8d1a6b23-4f70-4c19-a5e6-3c9b2d7f0e51
+status: experimental
+description: |
+  Acces en lecture a la memoire de lsass.exe (Sysmon Event 10) avec un masque
+  GrantedAccess typique du dump d'identifiants (mimikatz sekurlsa, procdump,
+  comsvcs MiniDump). Necessite l'activation de ProcessAccess sur lsass.exe dans
+  la configuration Sysmon.
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+author: aminec58
+date: 2026-11-13
+tags:
+  - attack.credential-access
+  - attack.t1003.001
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 10
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess:
+      - '0x1010'
+      - '0x1410'
+      - '0x1438'
+      - '0x143a'
+      - '0x1fffff'
+  condition: selection
+falsepositives:
+  - Antivirus ou outils de supervision legitimes accedant a LSASS
+level: high
