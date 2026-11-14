@@ -42,10 +42,10 @@ Un scénario n'est « fini » que si **la détection se déclenche au rejeu** ET
 
 | # | Scénario                              | MITRE ATT&CK | Outil(s)                      | Détection Wazuh | Requête Velociraptor | Règle ajoutée | Remédiation |
 |---|---------------------------------------|--------------|-------------------------------|-----------------|----------------------|---------------|-------------|
-| 1 | [Password spraying](docs/03-scenarios/01-password-spraying.md) | T1110.003 | CrackMapExec / nxc            | _à compléter_ | _à compléter_ | _à compléter_ | Politique MDP + verrouillage |
-| 2 | [AS-REP roasting](docs/03-scenarios/02-asrep-roasting.md)       | T1558.004 | Impacket GetNPUsers / Rubeus  | _à compléter_ | _à compléter_ | _à compléter_ | Réactiver pré-auth, AES only |
-| 3 | [Kerberoasting](docs/03-scenarios/03-kerberoasting.md)          | T1558.003 | Rubeus / GetUserSPNs          | _à compléter_ | _à compléter_ | _à compléter_ | gMSA, AES only, retrait SPN |
-| 4 | [Pass-the-Hash + latéral](docs/03-scenarios/04-pass-the-hash.md)| T1550.002 | Mimikatz + CrackMapExec       | _à compléter_ | _à compléter_ | _à compléter_ | Cadrer délégation contrainte, comptes non délégables |
+| 1 | [Password spraying](docs/03-scenarios/01-password-spraying.md) | T1110.003 | CrackMapExec / nxc            | `60122`/`60204` partiels, 4771 non traité | `Custom.PurpleLab.PasswordSpray` | `100101` `100110` `100111` | Verrouillage 5/30 min, longueur 14 + complexité, double reset |
+| 2 | [AS-REP roasting](docs/03-scenarios/02-asrep-roasting.md)       | T1558.004 | Impacket GetNPUsers / Rubeus  | aucune native (4768 `preAuthType 0`) | `Custom.PurpleLab.ASREPRoast` | `100120` `100121` | Pré-auth rétablie, double reset, leurre `svc-legacy-backup` |
+| 3 | [Kerberoasting](docs/03-scenarios/03-kerberoasting.md)          | T1558.003 | Rubeus / GetUserSPNs          | aucune native (4769 réseau avalé par `92651`) | `Custom.PurpleLab.Kerberoast` | `100130` `100131` `100132` | AES seul + mdp aléatoire 32 car., leurre SPN `svc-mssql-legacy` |
+| 4 | [Pass-the-Hash + latéral](docs/03-scenarios/04-pass-the-hash.md)| T1550.002 | Mimikatz + CrackMapExec       | `92652` bruyant, 4698 (atexec) non audité | `Custom.PurpleLab.PassTheHash` | `100140` `100141` `100142` (en cours) | Sysmon ID 10, LAPS, retrait `LocalAccountTokenFilterPolicy` (en cours) |
 | 5 | [Chemin → Domain Admin](docs/03-scenarios/05-path-to-da.md)     | T1087     | BloodHound / SharpHound       | _à compléter_ | _à compléter_ | _à compléter_ | Nettoyage ACL, tiering, moindre privilège |
 
 ## Structure du dépôt
@@ -62,9 +62,9 @@ purple-ad-lab/
 
 ## Avancement
 
-- [ ] Infra déployée + snapshots baseline
-- [ ] DC vulnérabilisé + documenté
+- [x] Infra déployée + snapshots baseline
+- [x] DC vulnérabilisé + documenté
 - [x] Télémétrie activée et ingestion Wazuh validée
 - [x] Wazuh + Velociraptor opérationnels
-- [ ] Scénarios 1 → 5 bouclés (détection + remédiation validées au rejeu)
+- [ ] Scénarios 1 → 5 bouclés (3/5 validés au rejeu : 1, 2, 3 ; scénario 4 en cours)
 - [ ] README final complété
